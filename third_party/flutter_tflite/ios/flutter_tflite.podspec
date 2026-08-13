@@ -15,7 +15,12 @@ A Flutter plugin for accessing TensorFlow Lite. Supports both iOS and Android.
   s.source_files = 'Classes/**/*'
   s.public_header_files = 'Classes/**/*.h'
   s.dependency 'Flutter'
-  s.dependency 'TensorFlowLiteC'
+  # Unconstrained resolves to the latest TensorFlowLiteC (2.13.0 as of this
+  # writing), which repackaged its headers and breaks this plugin's plain
+  # #import "TensorFlowLiteC.h" in TflitePlugin.mm ("file not found"). Pin to
+  # 2.2.0, the version the plugin author's own Podfile.lock was built and
+  # tested against.
+  s.dependency 'TensorFlowLiteC', '2.2.0'
   s.xcconfig = { 'USER_HEADER_SEARCH_PATHS' => '$(inherited) "${PODS_ROOT}/Headers/Private" "${PODS_ROOT}/Headers/Private/flutter_tflite" "${PODS_ROOT}/Headers/Public" "${PODS_ROOT}/Headers/Public/Flutter" "${PODS_ROOT}/Headers/Public/TensorFlowLite/tensorflow_lite" "${PODS_ROOT}/Headers/Public/flutter_tflite" "${PODS_ROOT}/TensorFlowLite/Frameworks/tensorflow_lite.framework/Headers" "${PODS_ROOT}/TensorFlowLiteC/Frameworks/TensorFlowLiteC.framework/Headers"' }
 
   s.ios.deployment_target = '9.0'
