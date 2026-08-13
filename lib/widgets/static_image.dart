@@ -24,6 +24,13 @@ class _StaticImageState extends State<StaticImage> {
   double? _imageWidth, _imageHeight;
   int inferenceTime = 0;
   int preProcessingTime = 0;
+  // loadModel()'s result string ("success" or a native "Failed to ..."
+  // error) - was previously discarded, so a failed load (e.g. an
+  // unsupported op in an old TensorFlowLiteC runtime) looked identical to
+  // "loaded fine but found nothing": both end up as an empty/short raw
+  // output from detectObjectRawSingleOnImage. Keeping it around lets the
+  // zero-detections diagnostic tell those two cases apart.
+  String? _modelLoadStatus;
 
   //Resource Monitor
   // Resource? _data;
@@ -36,7 +43,7 @@ class _StaticImageState extends State<StaticImage> {
   loadTfModel() async {
     if (Platform.isIOS && widget.model == PotholeModel.yolo) {
       // No custom op, no label file needed - see yolo_postprocess.dart.
-      await Tflite.loadModel(
+      _modelLoadStatus = await Tflite.loadModel(
         model: "assets/yolo_pothole.tflite",
         labels: "",
         isAsset: true,
@@ -100,8 +107,9 @@ class _StaticImageState extends State<StaticImage> {
         // pothole photo) without needing a Mac to read device logs.
         if (recognitions.isEmpty) {
           final maxScore = maxYoloScore(outputList, numAnchors);
-          _showDiagnostic(
-              'YOLOv8: sin detecciones. Confianza máxima: ${maxScore.toStringAsFixed(3)}');
+          _showDiagnostic('YOLOv8: sin detecciones. Confianza máxima: '
+              '${maxScore.toStringAsFixed(4)}. Modelo cargado: $_modelLoadStatus. '
+              'Salida: ${outputList.length} valores, anchors: $numAnchors');
         }
       } catch (e) {
         recognitions = [];
