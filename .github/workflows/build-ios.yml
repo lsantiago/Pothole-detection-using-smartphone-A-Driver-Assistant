@@ -27,7 +27,7 @@ jobs:
 
       - name: DEBUG dump auto-generated Podfile
         run: |
-          flutter build ios --config-only
+          flutter build ios --config-only --no-codesign
           echo "-----PODFILE-----"
           cat ios/Podfile
 
