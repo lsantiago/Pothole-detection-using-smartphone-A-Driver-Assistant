@@ -17,8 +17,7 @@
 #include "tensorflow/contrib/lite/string_util.h"
 #include "tensorflow/contrib/lite/op_resolver.h"
 #elif defined TFLITE2
-#import "TensorFlowLiteC.h"
-#import "metal_delegate.h"
+#import <TensorFlowLiteC/TensorFlowLiteC.h>
 #else
 #include "tensorflow/lite/kernels/register.h"
 #include "tensorflow/lite/model.h"
@@ -27,6 +26,25 @@
 #endif
 
 #include "ios_image_load.h"
+
+#ifdef TFLITE2
+// TFLite_Detection_PostProcess (the NMS/box-decode op baked into
+// TFLite_Detection_PostProcess-flavored SSD exports, e.g. via
+// export_tflite_graph_tf2.py --add_postprocessing_op) is compiled into
+// TensorFlowLiteC but, being a custom (non-builtin) op, isn't registered by
+// the interpreter's default resolver. Without registering it explicitly,
+// Interpreter::Invoke() on any model using it returns kTfLiteError and every
+// detection call in this file silently returns an empty result. Declared
+// here to match tensorflow/lite/kernels/detection_postprocess.cc's exact
+// signature so the linker resolves it against the prebuilt framework.
+namespace tflite {
+namespace ops {
+namespace custom {
+TfLiteRegistration* Register_DETECTION_POSTPROCESS();
+}  // namespace custom
+}  // namespace ops
+}  // namespace tflite
+#endif
 
 #define LOG(x) std::cerr
 
@@ -165,11 +183,13 @@ NSString* loadModel(NSObject<FlutterPluginRegistrar>* _registrar, NSDictionary* 
   }
   options = TfLiteInterpreterOptionsCreate();
   TfLiteInterpreterOptionsSetNumThreads(options, num_threads);
-  
+  TfLiteInterpreterOptionsAddCustomOp(
+      options, "TFLite_Detection_PostProcess",
+      tflite::ops::custom::Register_DETECTION_POSTPROCESS(), 1, 1);
+
   bool useGpuDelegate = [args[@"useGpuDelegate"] boolValue];
   if (useGpuDelegate) {
-    delegate = TFLGpuDelegateCreate(nullptr);
-    TfLiteInterpreterOptionsAddDelegate(options, delegate);
+    NSLog(@"useGpuDelegate is not supported on iOS in this build - ignoring.");
   }
 #else
   model = tflite::FlatBufferModel::BuildFromFile([graph_path UTF8String]);
@@ -1493,8 +1513,6 @@ void runPoseNetOnFrame(NSDictionary* args, FlutterResult result) {
 void close() {
 #ifdef TFLITE2
   interpreter = nullptr;
-  if (delegate != nullptr)
-    TFLGpuDelegateDelete(delegate);
   delegate = nullptr;
 #else
   interpreter.release();
