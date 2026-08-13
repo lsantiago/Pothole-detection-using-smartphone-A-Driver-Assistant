@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
@@ -26,6 +28,15 @@ class OverlayPermissionScreenState extends State<OverlayPermissionScreen>
   }
 
   void checkPermission() async {
+    // systemAlertWindow ("draw over other apps") is an Android-only
+    // permission. iOS has no equivalent and permission_handler always
+    // reports it denied there, which would otherwise strand iOS users on
+    // this screen forever.
+    if (Platform.isIOS) {
+      context.read<FlashModeProvider>().setIsOverlayPermissionGranted(true);
+      return;
+    }
+
     final isOverlayPermissionGranted =
         await Permission.systemAlertWindow.status;
     print('Is Ignoring battery opimization: $isOverlayPermissionGranted');
