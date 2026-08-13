@@ -1,0 +1,52 @@
+name: Export RDD2022 YOLOv12s to TFLite
+
+# One-off conversion tool, not part of the app build: exports the
+# MIT-licensed rezzzq/yolo12s-road-damage-rdd2022 PyTorch checkpoint
+# (https://huggingface.co/rezzzq/yolo12s-road-damage-rdd2022) to TFLite so
+# it can be bundled as assets/rdd2022_pothole.tflite.
+#
+# Runs on macos-latest because Ultralytics' current TFLite/LiteRT export
+# pipeline (litert-torch, which needs torch.export) only supports Linux x86
+# and macOS - and a fresh runner avoids the dependency conflicts a
+# pre-existing local torch/torchvision install can cause when Ultralytics'
+# own "AutoUpdate" tries to patch versions mid-export. Installing
+# ultralytics and litert-torch together in one pip command lets pip's
+# resolver pick a mutually compatible set up front instead.
+on:
+  workflow_dispatch:
+
+jobs:
+  export:
+    runs-on: macos-latest
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install ultralytics + litert-torch
+        run: |
+          python -m pip install --upgrade pip
+          pip install ultralytics litert-torch
+
+      - name: Download RDD2022 YOLOv12s weights
+        run: curl -sL -o yolo12s_RDD2022_best.pt "https://huggingface.co/rezzzq/yolo12s-road-damage-rdd2022/resolve/main/yolo12s_RDD2022_best.pt"
+
+      - name: Export to TFLite
+        run: |
+          python -c "
+          from ultralytics import YOLO
+          m = YOLO('yolo12s_RDD2022_best.pt')
+          print('names:', m.names)
+          m.export(format='tflite', imgsz=640)
+          "
+          echo "--- all .tflite files produced ---"
+          find . -name "*.tflite" -exec ls -la {} \;
+
+      - name: Upload TFLite artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rdd2022-tflite
+          path: |
+            **/*.tflite
+          if-no-files-found: error
