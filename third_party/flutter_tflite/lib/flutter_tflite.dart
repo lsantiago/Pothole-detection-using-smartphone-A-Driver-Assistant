@@ -249,6 +249,47 @@ class Tflite {
     );
   }
 
+  // iOS-only: for single-output-tensor detection models needing no custom
+  // op at all (e.g. a YOLOv8 export - see yolo_postprocess.dart). Returns
+  // that tensor's flattened data plus its shape.
+  static Future<Map?> detectObjectRawSingleOnImage({
+    required String path,
+    double imageMean = 0,
+    double imageStd = 255,
+    bool asynch = true,
+  }) async {
+    return await _channel.invokeMethod(
+      'detectObjectRawSingleOnImage',
+      {
+        "path": path,
+        "imageMean": imageMean,
+        "imageStd": imageStd,
+        "asynch": asynch,
+      },
+    );
+  }
+
+  static Future<Map?> detectObjectRawSingleOnFrame({
+    required List<Uint8List> bytesList,
+    int imageHeight = 1280,
+    int imageWidth = 720,
+    double imageMean = 0,
+    double imageStd = 255,
+    bool asynch = true,
+  }) async {
+    return await _channel.invokeMethod(
+      'detectObjectRawSingleOnFrame',
+      {
+        "bytesList": bytesList,
+        "imageHeight": imageHeight,
+        "imageWidth": imageWidth,
+        "imageMean": imageMean,
+        "imageStd": imageStd,
+        "asynch": asynch,
+      },
+    );
+  }
+
   static Future close() async {
     return await _channel.invokeMethod('close');
   }

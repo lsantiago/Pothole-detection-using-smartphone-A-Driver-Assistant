@@ -41,6 +41,8 @@ void detectObjectOnBinary(NSDictionary* args, FlutterResult result);
 void detectObjectOnFrame(NSDictionary* args, FlutterResult result);
 void detectObjectRawOnImage(NSDictionary* args, FlutterResult result);
 void detectObjectRawOnFrame(NSDictionary* args, FlutterResult result);
+void detectObjectRawSingleOnImage(NSDictionary* args, FlutterResult result);
+void detectObjectRawSingleOnFrame(NSDictionary* args, FlutterResult result);
 void runPix2PixOnImage(NSDictionary* args, FlutterResult result);
 void runPix2PixOnBinary(NSDictionary* args, FlutterResult result);
 void runPix2PixOnFrame(NSDictionary* args, FlutterResult result);
@@ -92,6 +94,10 @@ void close();
     detectObjectRawOnImage(call.arguments, result);
   } else if ([@"detectObjectRawOnFrame" isEqualToString:call.method]) {
     detectObjectRawOnFrame(call.arguments, result);
+  } else if ([@"detectObjectRawSingleOnImage" isEqualToString:call.method]) {
+    detectObjectRawSingleOnImage(call.arguments, result);
+  } else if ([@"detectObjectRawSingleOnFrame" isEqualToString:call.method]) {
+    detectObjectRawSingleOnFrame(call.arguments, result);
   } else if ([@"runPix2PixOnImage" isEqualToString:call.method]) {
     runPix2PixOnImage(call.arguments, result);
   } else if ([@"runPix2PixOnBinary" isEqualToString:call.method]) {
@@ -543,6 +549,23 @@ NSDictionary* dumpRawSSDOutputs(bool include_anchors) {
   };
 }
 
+// For single-output-tensor detection models that need no custom op at all
+// (e.g. a YOLOv8 export: one [1, 4+numClasses, numAnchors] tensor) - just
+// returns that tensor's flattened, dequantized-if-needed data plus its
+// dimensions, so decoding can happen in Dart (see lib/yolo_postprocess.dart).
+NSDictionary* dumpRawSingleOutput() {
+  assert(TfLiteInterpreterGetOutputTensorCount(interpreter) == 1);
+  const TfLiteTensor* tensor = TfLiteInterpreterGetOutputTensor(interpreter, 0);
+  NSMutableArray* shape = [NSMutableArray arrayWithCapacity:tensor->dims->size];
+  for (int i = 0; i < tensor->dims->size; i++) {
+    [shape addObject:@(tensor->dims->data[i])];
+  }
+  return @{
+    @"output": TensorToFloatArray(tensor),
+    @"shape": shape,
+  };
+}
+
 void runModelOnImage(NSDictionary* args, FlutterResult result) {
   const NSString* image_path = args[@"path"];
   const float input_mean = [args[@"imageMean"] floatValue];
@@ -975,6 +998,53 @@ void detectObjectRawOnFrame(NSDictionary* args, FlutterResult result) {
       return result(@{});
     }
     return result(dumpRawSSDOutputs(include_anchors));
+  });
+}
+
+void detectObjectRawSingleOnImage(NSDictionary* args, FlutterResult result) {
+  const NSString* image_path = args[@"path"];
+  const float input_mean = [args[@"imageMean"] floatValue];
+  const float input_std = [args[@"imageStd"] floatValue];
+
+  if (!interpreter || interpreter_busy) {
+    NSLog(@"Failed to construct interpreter or busy.");
+    return result(@{});
+  }
+
+  int input_size;
+  feedInputTensorImage(image_path, input_mean, input_std, &input_size);
+
+  runTflite(args, ^(TfLiteStatus status) {
+    if (status != kTfLiteOk) {
+      NSLog(@"Failed to invoke!");
+      return result(@{});
+    }
+    return result(dumpRawSingleOutput());
+  });
+}
+
+void detectObjectRawSingleOnFrame(NSDictionary* args, FlutterResult result) {
+  const FlutterStandardTypedData* typedData = args[@"bytesList"][0];
+  const int image_height = [args[@"imageHeight"] intValue];
+  const int image_width = [args[@"imageWidth"] intValue];
+  const float input_mean = [args[@"imageMean"] floatValue];
+  const float input_std = [args[@"imageStd"] floatValue];
+
+  if (!interpreter || interpreter_busy) {
+    NSLog(@"Failed to construct interpreter or busy.");
+    return result(@{});
+  }
+
+  int input_size;
+  int image_channels = 4;
+  feedInputTensorFrame(typedData, &input_size, image_height, image_width, image_channels, input_mean, input_std);
+
+  runTflite(args, ^(TfLiteStatus status) {
+    if (status != kTfLiteOk) {
+      NSLog(@"Failed to invoke!");
+      return result(@{});
+    }
+    return result(dumpRawSingleOutput());
   });
 }
 

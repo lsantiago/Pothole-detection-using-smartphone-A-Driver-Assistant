@@ -4,9 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_tflite/flutter_tflite.dart';
 
+import '../model_choice.dart';
 import '../ssd_postprocess.dart';
+import '../yolo_postprocess.dart';
 
 class StaticImage extends StatefulWidget {
+  final PotholeModel model;
+
+  StaticImage({Key? key, this.model = PotholeModel.ssd}) : super(key: key);
+
   @override
   _StaticImageState createState() => _StaticImageState();
 }
@@ -28,6 +34,15 @@ class _StaticImageState extends State<StaticImage> {
 
   // this function loads the model
   loadTfModel() async {
+    if (Platform.isIOS && widget.model == PotholeModel.yolo) {
+      // No custom op, no label file needed - see yolo_postprocess.dart.
+      await Tflite.loadModel(
+        model: "assets/yolo_pothole.tflite",
+        labels: "",
+        isAsset: true,
+      );
+      return;
+    }
     // iOS uses a version of this model with its TFLite_Detection_PostProcess
     // custom op stripped out (see assets/chitholian_potholes_raw.tflite and
     // ssd_postprocess.dart for why) and decodes detections itself, so it
@@ -57,7 +72,17 @@ class _StaticImageState extends State<StaticImage> {
   // this function detects the objects on the image
   detectObject(File image) async {
     List recognitions;
-    if (Platform.isIOS) {
+    if (Platform.isIOS && widget.model == PotholeModel.yolo) {
+      final raw = await Tflite.detectObjectRawSingleOnImage(path: image.path);
+      final shape = (raw?['shape'] as List?)?.cast<num>();
+      final numAnchors =
+          (shape != null && shape.length == 3) ? shape[2].toInt() : 8400;
+      final detections = decodeYoloDetections(
+        output: toDoubleList(raw?['output']),
+        numAnchors: numAnchors,
+      );
+      recognitions = yoloDetectionsToRecognitions(detections);
+    } else if (Platform.isIOS) {
       final raw = await Tflite.detectObjectRawOnImage(
         path: image.path,
         imageMean: 127.5,

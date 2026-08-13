@@ -1,11 +1,14 @@
 // ignore_for_file: avoid_print
 
+import 'dart:io';
+
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:notification_permissions/notification_permissions.dart';
 
 import 'package:provider/provider.dart';
 
+import '../model_choice.dart';
 import '../provider/flash_provider.dart';
 import 'live_camera.dart';
 import 'static_image.dart';
@@ -145,10 +148,18 @@ class NotificationPermissionScreenState
   }
 }
 
-class BodyWidget extends StatelessWidget {
+class BodyWidget extends StatefulWidget {
   BodyWidget({
     Key? key,
   }) : super(key: key);
+
+  @override
+  State<BodyWidget> createState() => _BodyWidgetState();
+}
+
+class _BodyWidgetState extends State<BodyWidget> {
+  // yolo is iOS-only - see model_choice.dart.
+  PotholeModel _selectedModel = PotholeModel.ssd;
 
   @override
   Widget build(BuildContext context) {
@@ -156,13 +167,42 @@ class BodyWidget extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: <Widget>[
+          if (Platform.isIOS) ...[
+            const Text('Modelo de detección',
+                style: TextStyle(fontSize: 14)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: [
+                ChoiceChip(
+                  label: const Text('SSD (original)'),
+                  selected: _selectedModel == PotholeModel.ssd,
+                  onSelected: (_) {
+                    setState(() {
+                      _selectedModel = PotholeModel.ssd;
+                    });
+                  },
+                ),
+                ChoiceChip(
+                  label: const Text('YOLOv8 (nuevo)'),
+                  selected: _selectedModel == PotholeModel.yolo,
+                  onSelected: (_) {
+                    setState(() {
+                      _selectedModel = PotholeModel.yolo;
+                    });
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+          ],
           ButtonTheme(
                 minWidth: MediaQuery.of(context).size.width * 0.20,
                 child: ElevatedButton(
                   child: const Text("Detect in Image"),
                   onPressed: () {
                     Navigator.push(context, MaterialPageRoute(
-                      builder: (context) => StaticImage(),
+                      builder: (context) => StaticImage(model: _selectedModel),
                       ),
                     );
                   },
@@ -182,6 +222,7 @@ class BodyWidget extends StatelessWidget {
                       builder: (context, child) => LiveFeed(
                         cameras!,
                         key: UniqueKey(),
+                        model: _selectedModel,
                       ),
                     ),
                   ),

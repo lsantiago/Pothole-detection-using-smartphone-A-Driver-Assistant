@@ -18,12 +18,15 @@ import 'dart:convert';
 import 'package:flutter_ringtone_player/flutter_ringtone_player.dart';
 import 'package:http/http.dart' as http;
 
+import '../model_choice.dart';
 import '../ssd_postprocess.dart';
+import '../yolo_postprocess.dart';
 
 class LiveFeed extends StatefulWidget {
   final List<CameraDescription> cameras;
+  final PotholeModel model;
 
-  LiveFeed(this.cameras, {required Key key});
+  LiveFeed(this.cameras, {required Key key, this.model = PotholeModel.ssd});
   @override
   _LiveFeedState createState() {
     return _LiveFeedState();
@@ -47,12 +50,21 @@ class _LiveFeedState extends State<LiveFeed> with WidgetsBindingObserver {
   bool _alertsEnabled = false;
   initCameras() async {}
   loadTfModel() async {
+    _cachedAnchors = null;
+    if (Platform.isIOS && widget.model == PotholeModel.yolo) {
+      // No custom op, no label file needed - see yolo_postprocess.dart.
+      await Tflite.loadModel(
+        model: "assets/yolo_pothole.tflite",
+        labels: "",
+        isAsset: true,
+      );
+      return;
+    }
     // iOS uses a version of this model with its TFLite_Detection_PostProcess
     // custom op stripped out (see assets/potholes_IwFFQ_new_raw.tflite and
     // ssd_postprocess.dart for why) and decodes detections itself, so it
     // doesn't need the label file - Android still uses the plugin's
     // built-in SSD parsing against the original model.
-    _cachedAnchors = null;
     await Tflite.loadModel(
         model: Platform.isIOS
             ? "assets/potholes_IwFFQ_new_raw.tflite"
@@ -172,7 +184,21 @@ class _LiveFeedState extends State<LiveFeed> with WidgetsBindingObserver {
     print('value: $isDetecting');
     try {
       List recognitions;
-      if (Platform.isIOS) {
+      if (Platform.isIOS && widget.model == PotholeModel.yolo) {
+        final raw = await Tflite.detectObjectRawSingleOnFrame(
+          bytesList: img.planes.map((plane) => plane.bytes).toList(),
+          imageHeight: img.height,
+          imageWidth: img.width,
+        );
+        final shape = (raw?['shape'] as List?)?.cast<num>();
+        final numAnchors =
+            (shape != null && shape.length == 3) ? shape[2].toInt() : 8400;
+        final detections = decodeYoloDetections(
+          output: toDoubleList(raw?['output']),
+          numAnchors: numAnchors,
+        );
+        recognitions = yoloDetectionsToRecognitions(detections);
+      } else if (Platform.isIOS) {
         final raw = await Tflite.detectObjectRawOnFrame(
           bytesList: img.planes.map((plane) => plane.bytes).toList(),
           imageHeight: img.height,
