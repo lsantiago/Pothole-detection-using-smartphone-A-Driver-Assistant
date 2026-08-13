@@ -42,6 +42,9 @@ class _LiveFeedState extends State<LiveFeed> with WidgetsBindingObserver {
   // the first iOS detection call so it isn't re-fetched over the platform
   // channel on every single camera frame.
   List<double>? _cachedAnchors;
+  // Opt-in: the "DANGER AHEAD" sound + dialog is off by default; the user
+  // enables it from the switch in the app bar.
+  bool _alertsEnabled = false;
   initCameras() async {}
   loadTfModel() async {
     // iOS uses a version of this model with its TFLite_Detection_PostProcess
@@ -222,7 +225,7 @@ class _LiveFeedState extends State<LiveFeed> with WidgetsBindingObserver {
           print("Body: $body");
           postRequest(body);
 
-          if (width * height >= 5500) {
+          if (_alertsEnabled && width * height >= 5500) {
             Timer _timer;
             FlutterRingtonePlayer.play(
                 fromAsset: "assets/alert.mp3", looping: true, volume: 1);
@@ -544,6 +547,22 @@ class _LiveFeedState extends State<LiveFeed> with WidgetsBindingObserver {
             appBar: isPortrait
                 ? AppBar(
                     title: const Text("SpotHole"),
+                    actions: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text("Alerta", style: TextStyle(fontSize: 14)),
+                          Switch(
+                            value: _alertsEnabled,
+                            onChanged: (value) {
+                              setState(() {
+                                _alertsEnabled = value;
+                              });
+                            },
+                          ),
+                        ],
+                      ),
+                    ],
                   )
                 : null,
             body: FutureBuilder(
