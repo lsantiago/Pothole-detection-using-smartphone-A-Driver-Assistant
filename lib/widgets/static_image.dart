@@ -16,6 +16,7 @@ class _StaticImageState extends State<StaticImage> {
   double? _imageWidth, _imageHeight;
   int inferenceTime = 0;
   int preProcessingTime = 0;
+  String _debugStatus = 'Not loaded yet';
 
   //Resource Monitor
   // Resource? _data;
@@ -26,13 +27,23 @@ class _StaticImageState extends State<StaticImage> {
 
   // this function loads the model
   loadTfModel() async {
-    await Tflite.loadModel(
-      model:
-          "assets/chitholian_potholes.tflite", //detect_integerWithFloatFallbackQuantization
-      labels: "assets/potholes.txt",
-      isAsset: true,
-      isModelTf1: true,
-    );
+    try {
+      final result = await Tflite.loadModel(
+        model:
+            "assets/chitholian_potholes.tflite", //detect_integerWithFloatFallbackQuantization
+        labels: "assets/potholes.txt",
+        isAsset: true,
+        isModelTf1: true,
+      );
+      setState(() {
+        _debugStatus = 'loadModel result: $result';
+      });
+    } catch (e, st) {
+      setState(() {
+        _debugStatus = 'loadModel ERROR: $e';
+      });
+      print('loadModel ERROR: $e\n$st');
+    }
   }
 
   setRecognitions(recognitions) {
@@ -48,25 +59,35 @@ class _StaticImageState extends State<StaticImage> {
 
   // this function detects the objects on the image
   detectObject(File image) async {
-    var recognitions = await Tflite.detectObjectOnImage(
-        path: image.path, // required
-        model: "SSDMobileNet",
-        imageMean: 127.5,
-        imageStd: 127.5,
-        threshold: 0.4, // defaults to 0.1
-        numResultsPerClass: 10, // defaults to 5
-        asynch: true // defaults to true
-        );
-    FileImage(image)
-        .resolve(ImageConfiguration())
-        .addListener((ImageStreamListener((ImageInfo info, bool _) {
-          setState(() {
-            _imageWidth = info.image.width.toDouble();
-            _imageHeight = info.image.height.toDouble();
-          });
-        })));
+    try {
+      var recognitions = await Tflite.detectObjectOnImage(
+          path: image.path, // required
+          model: "SSDMobileNet",
+          imageMean: 127.5,
+          imageStd: 127.5,
+          threshold: 0.4, // defaults to 0.1
+          numResultsPerClass: 10, // defaults to 5
+          asynch: true // defaults to true
+          );
+      FileImage(image)
+          .resolve(ImageConfiguration())
+          .addListener((ImageStreamListener((ImageInfo info, bool _) {
+            setState(() {
+              _imageWidth = info.image.width.toDouble();
+              _imageHeight = info.image.height.toDouble();
+            });
+          })));
 
-    setRecognitions(recognitions);
+      setState(() {
+        _debugStatus = 'detectObjectOnImage returned ${recognitions?.length ?? "null"} result(s): $recognitions';
+      });
+      setRecognitions(recognitions);
+    } catch (e, st) {
+      setState(() {
+        _debugStatus = 'detectObjectOnImage ERROR: $e';
+      });
+      print('detectObjectOnImage ERROR: $e\n$st');
+    }
   }
 
   @override
@@ -184,6 +205,21 @@ class _StaticImageState extends State<StaticImage> {
     }
 
     stackChildren.addAll(renderBoxes(size));
+
+    // TEMPORARY diagnostic overlay - remove once detection is confirmed
+    // working on iOS.
+    stackChildren.add(Align(
+      alignment: Alignment.bottomCenter,
+      child: Container(
+        width: size.width,
+        color: Colors.black87,
+        padding: const EdgeInsets.all(8),
+        child: Text(
+          _debugStatus,
+          style: const TextStyle(fontSize: 12, color: Colors.yellow),
+        ),
+      ),
+    ));
 
     if (_busy!) {
       print("App is currently $_busy");

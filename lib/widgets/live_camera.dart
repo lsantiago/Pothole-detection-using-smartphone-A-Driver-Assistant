@@ -35,17 +35,28 @@ class _LiveFeedState extends State<LiveFeed> with WidgetsBindingObserver {
   int preProcessingTime = 0;
   int _imageHeight = 0;
   int _imageWidth = 0;
+  String _debugStatus = 'Not loaded yet';
   initCameras() async {}
   loadTfModel() async {
-    await Tflite.loadModel(
-        model: "assets/potholes_IwFFQ_new.tflite", //detect_FPIwO.tflite works
-        labels: "assets/potholes.txt",
-        useGpuDelegate: false, //doesnt work with tflite 2.9.0
-        useNnApiAndroid: true,
-        // around 30 ms inference time with model trained on our dataset (INTEGER WITH FLOAT FALLBACK QUANTIZATION WITH DEFAULT OPTMIZATIONS) //potholes.tflite
-        isAsset: true,
-        isModelTf1: false,
-        numThreads: 4);
+    try {
+      final result = await Tflite.loadModel(
+          model: "assets/potholes_IwFFQ_new.tflite", //detect_FPIwO.tflite works
+          labels: "assets/potholes.txt",
+          useGpuDelegate: false, //doesnt work with tflite 2.9.0
+          useNnApiAndroid: true,
+          // around 30 ms inference time with model trained on our dataset (INTEGER WITH FLOAT FALLBACK QUANTIZATION WITH DEFAULT OPTMIZATIONS) //potholes.tflite
+          isAsset: true,
+          isModelTf1: false,
+          numThreads: 4);
+      setState(() {
+        _debugStatus = 'loadModel result: $result';
+      });
+    } catch (e, st) {
+      setState(() {
+        _debugStatus = 'loadModel ERROR: $e';
+      });
+      print('loadModel ERROR: $e\n$st');
+    }
   }
 
   //Ip adress of server
@@ -178,6 +189,10 @@ class _LiveFeedState extends State<LiveFeed> with WidgetsBindingObserver {
         // numBoxesPerBlock: 5,
         // asynch: true,
       ).then((recognitions) {
+        setState(() {
+          _debugStatus =
+              'detectObjectOnFrame returned ${recognitions?.length ?? "null"} result(s): $recognitions';
+        });
         // if (recognitions != null) {
         //   recognitions.forEach((element) {
         //     print('Inference time is: ${element["inferenceTime"]}');
@@ -241,6 +256,12 @@ class _LiveFeedState extends State<LiveFeed> with WidgetsBindingObserver {
           });
         }
 
+        isDetecting = false;
+      }).catchError((e, st) {
+        setState(() {
+          _debugStatus = 'detectObjectOnFrame ERROR: $e';
+        });
+        print('detectObjectOnFrame ERROR: $e\n$st');
         isDetecting = false;
       });
     }
@@ -466,6 +487,20 @@ class _LiveFeedState extends State<LiveFeed> with WidgetsBindingObserver {
           widget.cameras,
           setRecognitions,
           controller!,
+        ),
+        // TEMPORARY diagnostic overlay - remove once detection is confirmed
+        // working on iOS.
+        Align(
+          alignment: Alignment.topCenter,
+          child: Container(
+            width: screen.width,
+            color: Colors.black87,
+            padding: const EdgeInsets.all(8),
+            child: Text(
+              _debugStatus,
+              style: const TextStyle(fontSize: 12, color: Colors.yellow),
+            ),
+          ),
         ),
         BoundingBox(
             _recognitions == null ? [] : _recognitions!,
