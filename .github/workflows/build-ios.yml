@@ -25,6 +25,12 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: DEBUG dump auto-generated Podfile
+        run: |
+          flutter build ios --config-only
+          echo "-----PODFILE-----"
+          cat ios/Podfile
+
       - name: Build unsigned iOS app
         run: flutter build ios --release --no-codesign --verbose
 
