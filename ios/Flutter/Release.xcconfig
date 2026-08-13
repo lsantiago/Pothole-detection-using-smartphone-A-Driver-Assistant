@@ -1,1 +1,14 @@
 #include "Generated.xcconfig"
+
+// Unsigned CI builds (flutter build ios --no-codesign): --no-codesign alone
+// isn't enough on modern Xcode, which resolves "Automatic" signing (and
+// requires a Development Team) during build planning, before the
+// CODE_SIGNING_ALLOWED=NO passed on the xcodebuild command line takes
+// effect. Setting it here at the project-config level skips that
+// resolution. Remove this if Release builds start being signed for real
+// (e.g. via a paid Apple Developer account in a signing CI pipeline).
+CODE_SIGN_STYLE = Manual
+CODE_SIGNING_ALLOWED = NO
+CODE_SIGNING_REQUIRED = NO
+CODE_SIGN_IDENTITY =
+DEVELOPMENT_TEAM =
