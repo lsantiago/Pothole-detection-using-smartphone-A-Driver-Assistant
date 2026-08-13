@@ -24,16 +24,12 @@ A Flutter plugin for accessing TensorFlow Lite. Supports both iOS and Android.
   # plugin's own .mm files via relative #include.
   s.public_header_files = 'Classes/TflitePlugin.h'
   s.dependency 'Flutter'
-  # 2.13.0: needs TfLiteInterpreterOptionsAddCustomOp (c_api_experimental.h)
-  # to register the TFLite_Detection_PostProcess custom op that our SSD
-  # models' output depends on - it's compiled into the TensorFlowLiteC
-  # binary but not registered by the interpreter's default resolver, so
-  # Invoke() silently fails (kTfLiteError) for any model using it unless
-  # it's registered explicitly. See TflitePlugin.mm. Pinned (rather than
-  # left unconstrained) since this version's exact XCFramework layout and
-  # symbol availability were verified for this fix; bumping it needs
-  # re-verifying both.
-  s.dependency 'TensorFlowLiteC', '2.13.0'
+  # Unconstrained resolves to the latest TensorFlowLiteC (2.13.0 as of this
+  # writing), which repackaged its headers and breaks this plugin's plain
+  # #import "TensorFlowLiteC.h" in TflitePlugin.mm ("file not found"). Pin to
+  # 2.2.0, the version the plugin author's own Podfile.lock was built and
+  # tested against.
+  s.dependency 'TensorFlowLiteC', '2.2.0'
   s.xcconfig = { 'USER_HEADER_SEARCH_PATHS' => '$(inherited) "${PODS_ROOT}/Headers/Private" "${PODS_ROOT}/Headers/Private/flutter_tflite" "${PODS_ROOT}/Headers/Public" "${PODS_ROOT}/Headers/Public/Flutter" "${PODS_ROOT}/Headers/Public/TensorFlowLite/tensorflow_lite" "${PODS_ROOT}/Headers/Public/flutter_tflite" "${PODS_ROOT}/TensorFlowLite/Frameworks/tensorflow_lite.framework/Headers" "${PODS_ROOT}/TensorFlowLiteC/Frameworks/TensorFlowLiteC.framework/Headers"' }
 
   s.ios.deployment_target = '9.0'
