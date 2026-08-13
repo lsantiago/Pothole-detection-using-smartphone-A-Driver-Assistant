@@ -9,7 +9,15 @@ class Tflite {
       String labels = "",
       int numThreads = 1,
       bool isAsset = true,
-      bool useGpuDelegate = false}) async {
+      bool useGpuDelegate = false,
+      // Android-only: run inference through the Android Neural Networks
+      // API delegate. No-op on iOS.
+      bool useNnApiAndroid = false,
+      // Whether the label map reserves index 0 for a background/placeholder
+      // class (TF1 Object Detection API convention), offsetting detected
+      // class indices by 1 when looked up in SSD-model results. Defaults to
+      // true, matching this plugin's original (pre-parameter) behavior.
+      bool isModelTf1 = true}) async {
     return await _channel.invokeMethod(
       'loadModel',
       {
@@ -17,7 +25,9 @@ class Tflite {
         "labels": labels,
         "numThreads": numThreads,
         "isAsset": isAsset,
-        'useGpuDelegate': useGpuDelegate
+        'useGpuDelegate': useGpuDelegate,
+        'useNnApiAndroid': useNnApiAndroid,
+        'isModelTf1': isModelTf1,
       },
     );
   }

@@ -123,6 +123,8 @@ std::unique_ptr<tflite::FlatBufferModel> model;
 std::unique_ptr<tflite::Interpreter> interpreter;
 #endif
 bool interpreter_busy = false;
+// See the matching field in TflitePlugin.java for what this controls.
+bool is_model_tf1 = true;
 
 static void LoadLabels(NSString* labels_path,
                        std::vector<std::string>* label_strings) {
@@ -151,7 +153,10 @@ NSString* loadModel(NSObject<FlutterPluginRegistrar>* _registrar, NSDictionary* 
   }
 
   const int num_threads = [args[@"numThreads"] intValue];
-  
+
+  NSNumber* isModelTf1Number = args[@"isModelTf1"];
+  is_model_tf1 = isModelTf1Number ? [isModelTf1Number boolValue] : true;
+
 #ifdef TFLITE2
   TfLiteInterpreterOptions *options = nullptr;
   model = TfLiteModelCreateFromFile(graph_path.UTF8String);
@@ -592,7 +597,7 @@ NSMutableArray* parseSSDMobileNet(float threshold, int num_results_per_class) {
     if (score < threshold) continue;
     
     NSMutableDictionary* res = [NSMutableDictionary dictionary];
-    NSString* class_name = [NSString stringWithUTF8String:labels[detected_class + 1].c_str()];
+    NSString* class_name = [NSString stringWithUTF8String:labels[detected_class + (is_model_tf1 ? 1 : 0)].c_str()];
     NSObject* counter = [counters objectForKey:class_name];
     
     if (counter) {

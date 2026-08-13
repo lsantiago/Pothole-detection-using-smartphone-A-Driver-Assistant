@@ -66,6 +66,12 @@ public class TflitePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
   private Activity activity;
   private Interpreter tfLite;
   private boolean tfLiteBusy = false;
+  // Whether the loaded SSD model's label map reserves index 0 for a
+  // background/placeholder class (TF1 Object Detection API convention),
+  // requiring detected class indices to be offset by 1 when looked up in
+  // `labels`. Defaults to true to match this plugin's original hardcoded
+  // behavior for callers that don't pass it.
+  private boolean isModelTf1 = true;
   private int inputSize = 0;
   private Vector<String> labels;
   float[][] labelProb;
@@ -260,12 +266,21 @@ public class TflitePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     if (useGpuDelegate == null) {
       useGpuDelegate = false;
     }
+    Boolean useNnApiAndroid = (Boolean) args.get("useNnApiAndroid");
+    if (useNnApiAndroid == null) {
+      useNnApiAndroid = false;
+    }
+    Boolean isModelTf1Arg = (Boolean) args.get("isModelTf1");
+    isModelTf1 = isModelTf1Arg == null ? true : isModelTf1Arg;
 
     final Interpreter.Options tfliteOptions = new Interpreter.Options();
     tfliteOptions.setNumThreads(numThreads);
     if (useGpuDelegate){
       GpuDelegate delegate = new GpuDelegate();
       tfliteOptions.addDelegate(delegate);
+    }
+    if (useNnApiAndroid) {
+      tfliteOptions.setUseNNAPI(true);
     }
     tfLite = new Interpreter(buffer, tfliteOptions);
 
@@ -719,7 +734,7 @@ public class TflitePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
       for (int i = 0; i < numDetections[0]; ++i) {
         if (outputScores[0][i] < threshold) continue;
 
-        String detectedClass = labels.get((int) outputClasses[0][i] + 1);
+        String detectedClass = labels.get((int) outputClasses[0][i] + (isModelTf1 ? 1 : 0));
 
         if (counters.get(detectedClass) == null) {
           counters.put(detectedClass, 1);
