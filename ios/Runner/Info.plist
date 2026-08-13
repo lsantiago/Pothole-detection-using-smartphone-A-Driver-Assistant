@@ -47,5 +47,13 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>SpotHole uses the camera to detect potholes in the road ahead.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>SpotHole's live camera recording requires microphone access.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>SpotHole needs access to your photos to detect potholes in a selected image.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>SpotHole records the location of detected potholes so they can be reported.</string>
 </dict>
 </plist>
