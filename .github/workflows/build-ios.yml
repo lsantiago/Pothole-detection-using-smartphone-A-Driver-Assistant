@@ -26,7 +26,7 @@ jobs:
         run: flutter pub get
 
       - name: Build unsigned iOS app
-        run: flutter build ios --release --no-codesign
+        run: flutter build ios --release --no-codesign --verbose
 
       - name: Package unsigned IPA
         run: |
