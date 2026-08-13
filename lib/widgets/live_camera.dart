@@ -2,6 +2,7 @@
 
 import 'dart:async';
 import 'dart:developer';
+import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -16,6 +17,8 @@ import 'camera.dart';
 import 'dart:convert';
 import 'package:flutter_ringtone_player/flutter_ringtone_player.dart';
 import 'package:http/http.dart' as http;
+
+import '../ssd_postprocess.dart';
 
 class LiveFeed extends StatefulWidget {
   final List<CameraDescription> cameras;
@@ -39,9 +42,16 @@ class _LiveFeedState extends State<LiveFeed> with WidgetsBindingObserver {
   initCameras() async {}
   loadTfModel() async {
     try {
+      // iOS uses a version of this model with its TFLite_Detection_PostProcess
+      // custom op stripped out (see assets/potholes_IwFFQ_new_raw.tflite and
+      // ssd_postprocess.dart for why) and decodes detections itself, so it
+      // doesn't need the label file - Android still uses the plugin's
+      // built-in SSD parsing against the original model.
       final result = await Tflite.loadModel(
-          model: "assets/potholes_IwFFQ_new.tflite", //detect_FPIwO.tflite works
-          labels: "assets/potholes.txt",
+          model: Platform.isIOS
+              ? "assets/potholes_IwFFQ_new_raw.tflite"
+              : "assets/potholes_IwFFQ_new.tflite", //detect_FPIwO.tflite works
+          labels: Platform.isIOS ? "" : "assets/potholes.txt",
           useGpuDelegate: false, //doesnt work with tflite 2.9.0
           useNnApiAndroid: true,
           // around 30 ms inference time with model trained on our dataset (INTEGER WITH FLOAT FALLBACK QUANTIZATION WITH DEFAULT OPTMIZATIONS) //potholes.tflite
@@ -160,110 +170,103 @@ class _LiveFeedState extends State<LiveFeed> with WidgetsBindingObserver {
 
   onLatestImageAvailable(CameraImage img) async {
     print('Is detecting');
-    if (!isDetecting) {
-      isDetecting = true;
-      print('value: $isDetecting');
-      Tflite.detectObjectOnFrame(
-        bytesList: img.planes.map((plane) {
-          return plane.bytes;
-        }).toList(),
-        //For ssd
-        model: "SSDMobileNet",
-        imageHeight: img.height,
-        imageWidth: img.width,
-        imageMean: 127.5,
-        imageStd: 127.5,
-        numResultsPerClass: 3,
-        threshold: 0.01, // TEMP lowered from 0.5 to see raw scores
-        //For yolo
-        // model: "YOLO",
-        // imageHeight: img.height,
-        // imageWidth: img.width,
-        // imageMean: 0,
-        // imageStd: 255.0,
-        // threshold: 0.2,
-        // numResultsPerClass: 1,
-        // //anchors:
-        // //anchors, // defaults to [0.57273,0.677385,1.87446,2.06253,3.33843,5.47434,7.88282,3.52778,9.77052,9.16828]
-        // blockSize: 32,
-        // numBoxesPerBlock: 5,
-        // asynch: true,
-      ).then((recognitions) {
-        setState(() {
-          _debugStatus =
-              'detectObjectOnFrame returned ${recognitions?.length ?? "null"} result(s): $recognitions';
-        });
-        // if (recognitions != null) {
-        //   recognitions.forEach((element) {
-        //     print('Inference time is: ${element["inferenceTime"]}');
-        //     //inferenceTime = element["inferenceTime"];
-        //   });
-        // }
-        setRecognitions(recognitions!, img.height, img.width);
-        print("Recognitions: $recognitions");
-        if (recognitions != null) {
-          recognitions.forEach((element) {
-            getLocation();
-            var body = new Map<String, Object>();
-            if (locationData != null) {
-              width =
-                  114.07 * element["rect"]["w"] + 1.18; //* (img.width / 320);
-              height =
-                  190.42 * element["rect"]["h"] + 3.82; // * (img.height / 320);
-              depth = 9.82 * element["rect"]["w"] + 0.12;
-              var longitude = locationData!.longitude;
-              var latitude = locationData!.latitude;
-              print("Longitude: $longitude and Latitude $latitude");
-              body["longitude"] = longitude as double;
-              body["latitude"] = latitude as double;
-              body["height"] = height;
-              body["width"] = width;
-              body["accuracy"] = element["confidenceInClass"] *
-                  100; //((2 * 3.14 * 180) / (width + height * 360) * 1) * 2.54
-              print("Body: $body");
-              postRequest(body);
+    if (isDetecting) return;
+    isDetecting = true;
+    print('value: $isDetecting');
+    try {
+      List recognitions;
+      if (Platform.isIOS) {
+        final raw = await Tflite.detectObjectRawOnFrame(
+          bytesList: img.planes.map((plane) => plane.bytes).toList(),
+          imageHeight: img.height,
+          imageWidth: img.width,
+          imageMean: 127.5,
+          imageStd: 127.5,
+        );
+        final detections = decodeSsdDetections(
+          boxEncodings: toDoubleList(raw?['boxes']),
+          classScores: toDoubleList(raw?['scores']),
+          anchors: toDoubleList(raw?['anchors']),
+        );
+        recognitions = ssdDetectionsToRecognitions(detections);
+      } else {
+        recognitions = await Tflite.detectObjectOnFrame(
+              bytesList: img.planes.map((plane) => plane.bytes).toList(),
+              model: "SSDMobileNet",
+              imageHeight: img.height,
+              imageWidth: img.width,
+              imageMean: 127.5,
+              imageStd: 127.5,
+              numResultsPerClass: 3,
+              threshold: 0.5,
+            ) ??
+            [];
+      }
 
-              if (width * height >= 5500) {
-                Timer _timer;
-                FlutterRingtonePlayer.play(
-                    fromAsset: "assets/alert.mp3", looping: true, volume: 1);
-                // FlutterRingtonePlayer.play(
-                //   android: AndroidSounds.notification,
-                //   looping: true,
-                //   volume: 1,
-                //   asAlarm: true,
-                // );
-                showDialog(
-                    context: context,
-                    builder: (context) {
-                      return const AlertDialog(
-                        //backgroundColor: Colors.red,
-                        title: const Text('Alert'),
-                        content: const Text('DANGER AHEAD'),
-                      );
-                    });
-                _timer = Timer(Duration(seconds: 3), () {
-                  FlutterRingtonePlayer.stop();
-                  Navigator.of(context).pop();
-                });
-              }
-            } else {
-              print("Longitude and latitude are null");
-            }
-            print(
-                'Width is: ${element["rect"]["w"]}, Height is: ${element["rect"]["h"]} and Acuracy is: ${element["confidenceInClass"] * 100} %');
-            //inferenceTime = element["inferenceTime"];
-          });
-        }
-
-        isDetecting = false;
-      }).catchError((e, st) {
-        setState(() {
-          _debugStatus = 'detectObjectOnFrame ERROR: $e';
-        });
-        print('detectObjectOnFrame ERROR: $e\n$st');
-        isDetecting = false;
+      setState(() {
+        _debugStatus =
+            'detection returned ${recognitions.length} result(s): $recognitions';
       });
+      setRecognitions(recognitions, img.height, img.width);
+      print("Recognitions: $recognitions");
+      recognitions.forEach((element) {
+        getLocation();
+        var body = new Map<String, Object>();
+        if (locationData != null) {
+          width = 114.07 * element["rect"]["w"] + 1.18; //* (img.width / 320);
+          height =
+              190.42 * element["rect"]["h"] + 3.82; // * (img.height / 320);
+          depth = 9.82 * element["rect"]["w"] + 0.12;
+          var longitude = locationData!.longitude;
+          var latitude = locationData!.latitude;
+          print("Longitude: $longitude and Latitude $latitude");
+          body["longitude"] = longitude as double;
+          body["latitude"] = latitude as double;
+          body["height"] = height;
+          body["width"] = width;
+          body["accuracy"] = element["confidenceInClass"] *
+              100; //((2 * 3.14 * 180) / (width + height * 360) * 1) * 2.54
+          print("Body: $body");
+          postRequest(body);
+
+          if (width * height >= 5500) {
+            Timer _timer;
+            FlutterRingtonePlayer.play(
+                fromAsset: "assets/alert.mp3", looping: true, volume: 1);
+            // FlutterRingtonePlayer.play(
+            //   android: AndroidSounds.notification,
+            //   looping: true,
+            //   volume: 1,
+            //   asAlarm: true,
+            // );
+            showDialog(
+                context: context,
+                builder: (context) {
+                  return const AlertDialog(
+                    //backgroundColor: Colors.red,
+                    title: const Text('Alert'),
+                    content: const Text('DANGER AHEAD'),
+                  );
+                });
+            _timer = Timer(Duration(seconds: 3), () {
+              FlutterRingtonePlayer.stop();
+              Navigator.of(context).pop();
+            });
+          }
+        } else {
+          print("Longitude and latitude are null");
+        }
+        print(
+            'Width is: ${element["rect"]["w"]}, Height is: ${element["rect"]["h"]} and Acuracy is: ${element["confidenceInClass"] * 100} %');
+      });
+
+      isDetecting = false;
+    } catch (e, st) {
+      setState(() {
+        _debugStatus = 'detection ERROR: $e';
+      });
+      print('detection ERROR: $e\n$st');
+      isDetecting = false;
     }
   }
 

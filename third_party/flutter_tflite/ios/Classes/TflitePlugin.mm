@@ -39,6 +39,8 @@ void runModelOnFrame(NSDictionary* args, FlutterResult result);
 void detectObjectOnImage(NSDictionary* args, FlutterResult result);
 void detectObjectOnBinary(NSDictionary* args, FlutterResult result);
 void detectObjectOnFrame(NSDictionary* args, FlutterResult result);
+void detectObjectRawOnImage(NSDictionary* args, FlutterResult result);
+void detectObjectRawOnFrame(NSDictionary* args, FlutterResult result);
 void runPix2PixOnImage(NSDictionary* args, FlutterResult result);
 void runPix2PixOnBinary(NSDictionary* args, FlutterResult result);
 void runPix2PixOnFrame(NSDictionary* args, FlutterResult result);
@@ -86,6 +88,10 @@ void close();
     detectObjectOnBinary(call.arguments, result);
   } else if ([@"detectObjectOnFrame" isEqualToString:call.method]) {
     detectObjectOnFrame(call.arguments, result);
+  } else if ([@"detectObjectRawOnImage" isEqualToString:call.method]) {
+    detectObjectRawOnImage(call.arguments, result);
+  } else if ([@"detectObjectRawOnFrame" isEqualToString:call.method]) {
+    detectObjectRawOnFrame(call.arguments, result);
   } else if ([@"runPix2PixOnImage" isEqualToString:call.method]) {
     runPix2PixOnImage(call.arguments, result);
   } else if ([@"runPix2PixOnBinary" isEqualToString:call.method]) {
@@ -460,6 +466,48 @@ NSMutableArray* GetTopN(const float* prediction, const unsigned long prediction_
   }
   
   return predictions;
+}
+
+// Dequantizes (if needed) and flattens a tensor's data into a plain NSArray
+// of NSNumber floats, so Dart-side code doesn't need to know or care
+// whether a given model's tensors are float32 or uint8-quantized.
+NSArray* TensorToFloatArray(const TfLiteTensor* tensor) {
+  int64_t count = 1;
+  for (int i = 0; i < tensor->dims->size; i++) {
+    count *= tensor->dims->data[i];
+  }
+  NSMutableArray* result = [NSMutableArray arrayWithCapacity:count];
+  if (tensor->type == kTfLiteUInt8) {
+    const uint8_t* data = tensor->data.uint8;
+    const float scale = tensor->params.scale;
+    const int zero_point = tensor->params.zero_point;
+    for (int64_t i = 0; i < count; i++) {
+      [result addObject:@((data[i] - zero_point) * scale)];
+    }
+  } else {  // kTfLiteFloat32
+    const float* data = tensor->data.f;
+    for (int64_t i = 0; i < count; i++) {
+      [result addObject:@(data[i])];
+    }
+  }
+  return result;
+}
+
+// For models surgically stripped of their TFLite_Detection_PostProcess
+// custom op (see tools/strip_postprocess.py and lib/ssd_postprocess.dart) -
+// returns the raw box_encodings/class_predictions/anchors tensors so the SSD
+// decode + NMS that op would have done can be performed in Dart instead.
+// Relies on the stripped model's outputs being in that fixed order.
+NSDictionary* dumpRawSSDOutputs() {
+  assert(TfLiteInterpreterGetOutputTensorCount(interpreter) == 3);
+  const TfLiteTensor* boxes_tensor = TfLiteInterpreterGetOutputTensor(interpreter, 0);
+  const TfLiteTensor* scores_tensor = TfLiteInterpreterGetOutputTensor(interpreter, 1);
+  const TfLiteTensor* anchors_tensor = TfLiteInterpreterGetOutputTensor(interpreter, 2);
+  return @{
+    @"boxes": TensorToFloatArray(boxes_tensor),
+    @"scores": TensorToFloatArray(scores_tensor),
+    @"anchors": TensorToFloatArray(anchors_tensor),
+  };
 }
 
 void runModelOnImage(NSDictionary* args, FlutterResult result) {
@@ -845,6 +893,53 @@ void detectObjectOnFrame(NSDictionary* args, FlutterResult result) {
     else
       return result(parseYOLO((int)labels.size(), anchors, block_size, num_boxes_per_block, num_results_per_class,
                               threshold, input_size));
+  });
+}
+
+void detectObjectRawOnImage(NSDictionary* args, FlutterResult result) {
+  const NSString* image_path = args[@"path"];
+  const float input_mean = [args[@"imageMean"] floatValue];
+  const float input_std = [args[@"imageStd"] floatValue];
+
+  if (!interpreter || interpreter_busy) {
+    NSLog(@"Failed to construct interpreter or busy.");
+    return result(@{});
+  }
+
+  int input_size;
+  feedInputTensorImage(image_path, input_mean, input_std, &input_size);
+
+  runTflite(args, ^(TfLiteStatus status) {
+    if (status != kTfLiteOk) {
+      NSLog(@"Failed to invoke!");
+      return result(@{});
+    }
+    return result(dumpRawSSDOutputs());
+  });
+}
+
+void detectObjectRawOnFrame(NSDictionary* args, FlutterResult result) {
+  const FlutterStandardTypedData* typedData = args[@"bytesList"][0];
+  const int image_height = [args[@"imageHeight"] intValue];
+  const int image_width = [args[@"imageWidth"] intValue];
+  const float input_mean = [args[@"imageMean"] floatValue];
+  const float input_std = [args[@"imageStd"] floatValue];
+
+  if (!interpreter || interpreter_busy) {
+    NSLog(@"Failed to construct interpreter or busy.");
+    return result(@{});
+  }
+
+  int input_size;
+  int image_channels = 4;
+  feedInputTensorFrame(typedData, &input_size, image_height, image_width, image_channels, input_mean, input_std);
+
+  runTflite(args, ^(TfLiteStatus status) {
+    if (status != kTfLiteOk) {
+      NSLog(@"Failed to invoke!");
+      return result(@{});
+    }
+    return result(dumpRawSSDOutputs());
   });
 }
 

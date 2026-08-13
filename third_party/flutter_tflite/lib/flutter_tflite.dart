@@ -199,6 +199,51 @@ class Tflite {
     );
   }
 
+  // iOS-only: for SSD models surgically stripped of their
+  // TFLite_Detection_PostProcess custom op (that op is compiled into
+  // TensorFlowLiteC but not registered by its interpreter, so Invoke()
+  // fails for any model using it - see ssd_postprocess.dart). Returns the
+  // raw, already-dequantized box_encodings/class_predictions/anchors
+  // tensors so the box-decode + NMS that op would have done can happen in
+  // Dart instead.
+  static Future<Map?> detectObjectRawOnImage({
+    required String path,
+    double imageMean = 127.5,
+    double imageStd = 127.5,
+    bool asynch = true,
+  }) async {
+    return await _channel.invokeMethod(
+      'detectObjectRawOnImage',
+      {
+        "path": path,
+        "imageMean": imageMean,
+        "imageStd": imageStd,
+        "asynch": asynch,
+      },
+    );
+  }
+
+  static Future<Map?> detectObjectRawOnFrame({
+    required List<Uint8List> bytesList,
+    int imageHeight = 1280,
+    int imageWidth = 720,
+    double imageMean = 127.5,
+    double imageStd = 127.5,
+    bool asynch = true,
+  }) async {
+    return await _channel.invokeMethod(
+      'detectObjectRawOnFrame',
+      {
+        "bytesList": bytesList,
+        "imageHeight": imageHeight,
+        "imageWidth": imageWidth,
+        "imageMean": imageMean,
+        "imageStd": imageStd,
+        "asynch": asynch,
+      },
+    );
+  }
+
   static Future close() async {
     return await _channel.invokeMethod('close');
   }
