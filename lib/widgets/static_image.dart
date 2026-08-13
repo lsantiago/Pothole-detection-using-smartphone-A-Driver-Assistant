@@ -58,6 +58,13 @@ class _StaticImageState extends State<StaticImage> {
     );
   }
 
+  _showDiagnostic(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), duration: const Duration(seconds: 6)),
+    );
+  }
+
   setRecognitions(recognitions) {
     setState(() {
       _recognitions = recognitions;
@@ -73,15 +80,33 @@ class _StaticImageState extends State<StaticImage> {
   detectObject(File image) async {
     List recognitions;
     if (Platform.isIOS && widget.model == PotholeModel.yolo) {
-      final raw = await Tflite.detectObjectRawSingleOnImage(path: image.path);
-      final shape = (raw?['shape'] as List?)?.cast<num>();
-      final numAnchors =
-          (shape != null && shape.length == 3) ? shape[2].toInt() : 8400;
-      final detections = decodeYoloDetections(
-        output: toDoubleList(raw?['output']),
-        numAnchors: numAnchors,
-      );
-      recognitions = yoloDetectionsToRecognitions(detections);
+      try {
+        final raw =
+            await Tflite.detectObjectRawSingleOnImage(path: image.path);
+        final shape = (raw?['shape'] as List?)?.cast<num>();
+        final numAnchors =
+            (shape != null && shape.length == 3) ? shape[2].toInt() : 8400;
+        final outputList = toDoubleList(raw?['output']);
+        final detections = decodeYoloDetections(
+          output: outputList,
+          numAnchors: numAnchors,
+        );
+        recognitions = yoloDetectionsToRecognitions(detections);
+        // Temporary diagnostic: the YOLOv8 option is new and hasn't been
+        // confirmed to detect anything real on-device yet. Surfacing the
+        // top confidence score (instead of just "no detections") tells us
+        // whether it's a threshold-tuning problem (score close to but under
+        // 0.25) or something more broken (score near 0 for an obvious
+        // pothole photo) without needing a Mac to read device logs.
+        if (recognitions.isEmpty) {
+          final maxScore = maxYoloScore(outputList, numAnchors);
+          _showDiagnostic(
+              'YOLOv8: sin detecciones. Confianza máxima: ${maxScore.toStringAsFixed(3)}');
+        }
+      } catch (e) {
+        recognitions = [];
+        _showDiagnostic('YOLOv8: error - $e');
+      }
     } else if (Platform.isIOS) {
       final raw = await Tflite.detectObjectRawOnImage(
         path: image.path,

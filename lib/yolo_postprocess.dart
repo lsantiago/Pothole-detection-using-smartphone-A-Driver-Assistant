@@ -32,6 +32,11 @@ List<YoloDetection> decodeYoloDetections({
   double nmsIouThreshold = 0.45, // Ultralytics' own default
   int maxDetections = 10,
 }) {
+  // A raw platform-channel call that failed or returned early (e.g. the
+  // native side had no interpreter loaded yet) comes back as an empty/short
+  // list - bail out instead of indexing past the end of it.
+  if (output.length < 5 * numAnchors) return const [];
+
   final ymin = <double>[];
   final xmin = <double>[];
   final ymax = <double>[];
@@ -80,6 +85,20 @@ List<YoloDetection> decodeYoloDetections({
       YoloDetection(
           ymin: ymin[i], xmin: xmin[i], ymax: ymax[i], xmax: xmax[i], score: scores[i])
   ];
+}
+
+/// Highest raw confidence score found in the output, regardless of
+/// threshold - a diagnostic to tell "nothing detected because every score
+/// is near zero" apart from "nothing detected because everything is just
+/// under the confidence threshold".
+double maxYoloScore(List<double> output, int numAnchors) {
+  if (output.length < 5 * numAnchors) return 0.0;
+  double best = 0.0;
+  for (int i = 0; i < numAnchors; i++) {
+    final s = output[4 * numAnchors + i];
+    if (s > best) best = s;
+  }
+  return best;
 }
 
 double _iou(double aYmin, double aXmin, double aYmax, double aXmax,
