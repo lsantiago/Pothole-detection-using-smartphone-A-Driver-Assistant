@@ -24,13 +24,15 @@ A Flutter plugin for accessing TensorFlow Lite. Supports both iOS and Android.
   # plugin's own .mm files via relative #include.
   s.public_header_files = 'Classes/TflitePlugin.h'
   s.dependency 'Flutter'
-  # Unconstrained resolves to the latest TensorFlowLiteC (2.13.0 as of this
-  # writing), which repackaged its headers and breaks this plugin's plain
-  # #import "TensorFlowLiteC.h" in TflitePlugin.mm ("file not found"). Pin to
-  # 2.2.0, the version the plugin author's own Podfile.lock was built and
-  # tested against.
-  s.dependency 'TensorFlowLiteC', '2.2.0'
-  s.xcconfig = { 'USER_HEADER_SEARCH_PATHS' => '$(inherited) "${PODS_ROOT}/Headers/Private" "${PODS_ROOT}/Headers/Private/flutter_tflite" "${PODS_ROOT}/Headers/Public" "${PODS_ROOT}/Headers/Public/Flutter" "${PODS_ROOT}/Headers/Public/TensorFlowLite/tensorflow_lite" "${PODS_ROOT}/Headers/Public/flutter_tflite" "${PODS_ROOT}/TensorFlowLite/Frameworks/tensorflow_lite.framework/Headers" "${PODS_ROOT}/TensorFlowLiteC/Frameworks/TensorFlowLiteC.framework/Headers"' }
+  # 2.2.0 (2020) doesn't recognize some op versions used by models exported
+  # with modern (2023+) TF/Ultralytics toolchains - TfLiteInterpreterCreate
+  # fails outright for them ("Failed to construct interpreter"), even though
+  # the .tflite file itself loads fine. 2.14.0 is the newest stable release
+  # as of this writing. TflitePlugin.mm now imports it framework-qualified
+  # (#import <TensorFlowLiteC/TensorFlowLiteC.h>) instead of the old plain
+  # #import "TensorFlowLiteC.h", which broke starting with 2.13.0's
+  # repackaged multi-slice .xcframework headers - see TflitePlugin.mm.
+  s.dependency 'TensorFlowLiteC', '2.14.0'
 
   s.ios.deployment_target = '9.0'
   s.static_framework = true

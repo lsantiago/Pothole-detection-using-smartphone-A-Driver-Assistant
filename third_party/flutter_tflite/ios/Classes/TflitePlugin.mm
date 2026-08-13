@@ -17,8 +17,18 @@
 #include "tensorflow/contrib/lite/string_util.h"
 #include "tensorflow/contrib/lite/op_resolver.h"
 #elif defined TFLITE2
-#import "TensorFlowLiteC.h"
-#import "metal_delegate.h"
+// Framework-qualified, not the plain quoted #import "TensorFlowLiteC.h"
+// this used to be: TensorFlowLiteC 2.13+ repackaged as a true multi-slice
+// .xcframework, so a hand-rolled flat USER_HEADER_SEARCH_PATHS pointing at
+// one specific Headers/ folder no longer matches its layout. The
+// framework-qualified import resolves via the FRAMEWORK_SEARCH_PATHS
+// CocoaPods sets up automatically for any vendored_frameworks dependency,
+// which picks the right per-platform slice at build time regardless of the
+// xcframework's internal layout.
+#import <TensorFlowLiteC/TensorFlowLiteC.h>
+// The GPU/Metal delegate now ships in a separate TensorFlowLiteC/Metal
+// subspec we don't depend on (this app never enables useGpuDelegate - see
+// its call sites), so metal_delegate.h isn't available here at all.
 #else
 #include "tensorflow/lite/kernels/register.h"
 #include "tensorflow/lite/model.h"
@@ -201,8 +211,11 @@ NSString* loadModel(NSObject<FlutterPluginRegistrar>* _registrar, NSDictionary* 
   
   bool useGpuDelegate = [args[@"useGpuDelegate"] boolValue];
   if (useGpuDelegate) {
-    delegate = TFLGpuDelegateCreate(nullptr);
-    TfLiteInterpreterOptionsAddDelegate(options, delegate);
+    // Metal GPU delegate support was dropped along with the
+    // metal_delegate.h import above - this app always passes
+    // useGpuDelegate: false, so silently ignoring it (falling back to CPU)
+    // rather than wiring up a delegate is fine.
+    NSLog(@"useGpuDelegate requested but GPU delegate support isn't built in on iOS - falling back to CPU.");
   }
 #else
   model = tflite::FlatBufferModel::BuildFromFile([graph_path UTF8String]);
@@ -1696,8 +1709,8 @@ void close() {
     TfLiteInterpreterDelete(interpreter);
     interpreter = nullptr;
   }
-  if (delegate != nullptr)
-    TFLGpuDelegateDelete(delegate);
+  // GPU delegate is never created (see loadModel) so there's nothing to
+  // delete here, but leave `delegate` around in case that changes.
   delegate = nullptr;
   if (model != nullptr) {
     TfLiteModelDelete(model);
