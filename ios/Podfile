@@ -1,5 +1,9 @@
-# Uncomment this line to define a global platform for your project
-# platform :ios, '11.0'
+# TensorFlowLiteC 2.14.0 (see third_party/flutter_tflite/ios/flutter_tflite.podspec)
+# requires iOS 12.0+. Without this, CocoaPods defaults the target to 11.0
+# and pod install fails to resolve: "Specs satisfying the
+# `TensorFlowLiteC (= 2.14.0)` dependency were found, but they required a
+# higher minimum deployment target."
+platform :ios, '12.0'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
