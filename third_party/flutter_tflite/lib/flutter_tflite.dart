@@ -229,6 +229,10 @@ class Tflite {
     int imageWidth = 720,
     double imageMean = 127.5,
     double imageStd = 127.5,
+    // The anchors tensor is a constant that never changes between calls for
+    // a given loaded model - pass false after the first call (once you've
+    // cached its value) to skip re-serializing ~50K floats every frame.
+    bool includeAnchors = true,
     bool asynch = true,
   }) async {
     return await _channel.invokeMethod(
@@ -237,6 +241,7 @@ class Tflite {
         "bytesList": bytesList,
         "imageHeight": imageHeight,
         "imageWidth": imageWidth,
+        "includeAnchors": includeAnchors,
         "imageMean": imageMean,
         "imageStd": imageStd,
         "asynch": asynch,

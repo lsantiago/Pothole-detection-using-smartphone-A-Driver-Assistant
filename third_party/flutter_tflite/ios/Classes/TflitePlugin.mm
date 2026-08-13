@@ -147,6 +147,27 @@ static void LoadLabels(NSString* labels_path,
 }
 
 NSString* loadModel(NSObject<FlutterPluginRegistrar>* _registrar, NSDictionary* args) {
+  // Free any previously loaded model/interpreter first. Every screen in
+  // this app calls loadModel() again each time it's opened (there's no
+  // matching close() call on screen exit), and neither this function nor
+  // close() used to actually release the native interpreter/mmap'd model
+  // file - just leaked them - so navigating in and out of the live camera
+  // or image-detection screens a few times ran the app out of resources
+  // ("Failed to mmap model").
+#ifdef TFLITE2
+  if (interpreter != nullptr) {
+    TfLiteInterpreterDelete(interpreter);
+    interpreter = nullptr;
+  }
+  if (model != nullptr) {
+    TfLiteModelDelete(model);
+    model = nullptr;
+  }
+#else
+  interpreter.reset();
+  model.reset();
+#endif
+
   NSString* graph_path;
   NSString* key;
   NSNumber* isAssetNumber = args[@"isAsset"];
@@ -498,10 +519,22 @@ NSArray* TensorToFloatArray(const TfLiteTensor* tensor) {
 // returns the raw box_encodings/class_predictions/anchors tensors so the SSD
 // decode + NMS that op would have done can be performed in Dart instead.
 // Relies on the stripped model's outputs being in that fixed order.
-NSDictionary* dumpRawSSDOutputs() {
+//
+// include_anchors defaults to true but should be passed false for
+// steady-state per-frame calls (live camera): the anchors tensor is a
+// constant that never changes between calls for a given loaded model, so
+// the caller can fetch it once and skip re-serializing/re-transmitting
+// ~50K floats over the platform channel on every single frame.
+NSDictionary* dumpRawSSDOutputs(bool include_anchors) {
   assert(TfLiteInterpreterGetOutputTensorCount(interpreter) == 3);
   const TfLiteTensor* boxes_tensor = TfLiteInterpreterGetOutputTensor(interpreter, 0);
   const TfLiteTensor* scores_tensor = TfLiteInterpreterGetOutputTensor(interpreter, 1);
+  if (!include_anchors) {
+    return @{
+      @"boxes": TensorToFloatArray(boxes_tensor),
+      @"scores": TensorToFloatArray(scores_tensor),
+    };
+  }
   const TfLiteTensor* anchors_tensor = TfLiteInterpreterGetOutputTensor(interpreter, 2);
   return @{
     @"boxes": TensorToFloatArray(boxes_tensor),
@@ -914,7 +947,7 @@ void detectObjectRawOnImage(NSDictionary* args, FlutterResult result) {
       NSLog(@"Failed to invoke!");
       return result(@{});
     }
-    return result(dumpRawSSDOutputs());
+    return result(dumpRawSSDOutputs(/*include_anchors=*/true));
   });
 }
 
@@ -924,6 +957,8 @@ void detectObjectRawOnFrame(NSDictionary* args, FlutterResult result) {
   const int image_width = [args[@"imageWidth"] intValue];
   const float input_mean = [args[@"imageMean"] floatValue];
   const float input_std = [args[@"imageStd"] floatValue];
+  const NSNumber* includeAnchorsArg = args[@"includeAnchors"];
+  const bool include_anchors = includeAnchorsArg ? [includeAnchorsArg boolValue] : true;
 
   if (!interpreter || interpreter_busy) {
     NSLog(@"Failed to construct interpreter or busy.");
@@ -939,7 +974,7 @@ void detectObjectRawOnFrame(NSDictionary* args, FlutterResult result) {
       NSLog(@"Failed to invoke!");
       return result(@{});
     }
-    return result(dumpRawSSDOutputs());
+    return result(dumpRawSSDOutputs(include_anchors));
   });
 }
 
@@ -1587,15 +1622,22 @@ void runPoseNetOnFrame(NSDictionary* args, FlutterResult result) {
 
 void close() {
 #ifdef TFLITE2
-  interpreter = nullptr;
+  if (interpreter != nullptr) {
+    TfLiteInterpreterDelete(interpreter);
+    interpreter = nullptr;
+  }
   if (delegate != nullptr)
     TFLGpuDelegateDelete(delegate);
   delegate = nullptr;
+  if (model != nullptr) {
+    TfLiteModelDelete(model);
+    model = nullptr;
+  }
 #else
   interpreter.release();
   interpreter = NULL;
-#endif
   model = NULL;
+#endif
   labels.clear();
 }
 

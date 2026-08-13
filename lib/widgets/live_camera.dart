@@ -38,35 +38,29 @@ class _LiveFeedState extends State<LiveFeed> with WidgetsBindingObserver {
   int preProcessingTime = 0;
   int _imageHeight = 0;
   int _imageWidth = 0;
-  String _debugStatus = 'Not loaded yet';
+  // The raw SSD anchors tensor is constant per loaded model - cached after
+  // the first iOS detection call so it isn't re-fetched over the platform
+  // channel on every single camera frame.
+  List<double>? _cachedAnchors;
   initCameras() async {}
   loadTfModel() async {
-    try {
-      // iOS uses a version of this model with its TFLite_Detection_PostProcess
-      // custom op stripped out (see assets/potholes_IwFFQ_new_raw.tflite and
-      // ssd_postprocess.dart for why) and decodes detections itself, so it
-      // doesn't need the label file - Android still uses the plugin's
-      // built-in SSD parsing against the original model.
-      final result = await Tflite.loadModel(
-          model: Platform.isIOS
-              ? "assets/potholes_IwFFQ_new_raw.tflite"
-              : "assets/potholes_IwFFQ_new.tflite", //detect_FPIwO.tflite works
-          labels: Platform.isIOS ? "" : "assets/potholes.txt",
-          useGpuDelegate: false, //doesnt work with tflite 2.9.0
-          useNnApiAndroid: true,
-          // around 30 ms inference time with model trained on our dataset (INTEGER WITH FLOAT FALLBACK QUANTIZATION WITH DEFAULT OPTMIZATIONS) //potholes.tflite
-          isAsset: true,
-          isModelTf1: false,
-          numThreads: 4);
-      setState(() {
-        _debugStatus = 'loadModel result: $result';
-      });
-    } catch (e, st) {
-      setState(() {
-        _debugStatus = 'loadModel ERROR: $e';
-      });
-      print('loadModel ERROR: $e\n$st');
-    }
+    // iOS uses a version of this model with its TFLite_Detection_PostProcess
+    // custom op stripped out (see assets/potholes_IwFFQ_new_raw.tflite and
+    // ssd_postprocess.dart for why) and decodes detections itself, so it
+    // doesn't need the label file - Android still uses the plugin's
+    // built-in SSD parsing against the original model.
+    _cachedAnchors = null;
+    await Tflite.loadModel(
+        model: Platform.isIOS
+            ? "assets/potholes_IwFFQ_new_raw.tflite"
+            : "assets/potholes_IwFFQ_new.tflite", //detect_FPIwO.tflite works
+        labels: Platform.isIOS ? "" : "assets/potholes.txt",
+        useGpuDelegate: false, //doesnt work with tflite 2.9.0
+        useNnApiAndroid: true,
+        // around 30 ms inference time with model trained on our dataset (INTEGER WITH FLOAT FALLBACK QUANTIZATION WITH DEFAULT OPTMIZATIONS) //potholes.tflite
+        isAsset: true,
+        isModelTf1: false,
+        numThreads: 4);
   }
 
   //Ip adress of server
@@ -182,11 +176,14 @@ class _LiveFeedState extends State<LiveFeed> with WidgetsBindingObserver {
           imageWidth: img.width,
           imageMean: 127.5,
           imageStd: 127.5,
+          includeAnchors: _cachedAnchors == null,
         );
+        _cachedAnchors ??= toDoubleList(raw?['anchors']);
         final detections = decodeSsdDetections(
           boxEncodings: toDoubleList(raw?['boxes']),
           classScores: toDoubleList(raw?['scores']),
-          anchors: toDoubleList(raw?['anchors']),
+          anchors: _cachedAnchors!,
+          nmsScoreThreshold: 0.5,
         );
         recognitions = ssdDetectionsToRecognitions(detections);
       } else {
@@ -203,10 +200,6 @@ class _LiveFeedState extends State<LiveFeed> with WidgetsBindingObserver {
             [];
       }
 
-      setState(() {
-        _debugStatus =
-            'detection returned ${recognitions.length} result(s): $recognitions';
-      });
       setRecognitions(recognitions, img.height, img.width);
       print("Recognitions: $recognitions");
       recognitions.forEach((element) {
@@ -262,9 +255,6 @@ class _LiveFeedState extends State<LiveFeed> with WidgetsBindingObserver {
 
       isDetecting = false;
     } catch (e, st) {
-      setState(() {
-        _debugStatus = 'detection ERROR: $e';
-      });
       print('detection ERROR: $e\n$st');
       isDetecting = false;
     }
@@ -490,20 +480,6 @@ class _LiveFeedState extends State<LiveFeed> with WidgetsBindingObserver {
           widget.cameras,
           setRecognitions,
           controller!,
-        ),
-        // TEMPORARY diagnostic overlay - remove once detection is confirmed
-        // working on iOS.
-        Align(
-          alignment: Alignment.topCenter,
-          child: Container(
-            width: screen.width,
-            color: Colors.black87,
-            padding: const EdgeInsets.all(8),
-            child: Text(
-              _debugStatus,
-              style: const TextStyle(fontSize: 12, color: Colors.yellow),
-            ),
-          ),
         ),
         BoundingBox(
             _recognitions == null ? [] : _recognitions!,

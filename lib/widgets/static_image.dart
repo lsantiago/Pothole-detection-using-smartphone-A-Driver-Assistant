@@ -18,7 +18,6 @@ class _StaticImageState extends State<StaticImage> {
   double? _imageWidth, _imageHeight;
   int inferenceTime = 0;
   int preProcessingTime = 0;
-  String _debugStatus = 'Not loaded yet';
 
   //Resource Monitor
   // Resource? _data;
@@ -29,29 +28,19 @@ class _StaticImageState extends State<StaticImage> {
 
   // this function loads the model
   loadTfModel() async {
-    try {
-      // iOS uses a version of this model with its TFLite_Detection_PostProcess
-      // custom op stripped out (see assets/chitholian_potholes_raw.tflite and
-      // ssd_postprocess.dart for why) and decodes detections itself, so it
-      // doesn't need the label file - Android still uses the plugin's
-      // built-in SSD parsing against the original model.
-      final result = await Tflite.loadModel(
-        model: Platform.isIOS
-            ? "assets/chitholian_potholes_raw.tflite"
-            : "assets/chitholian_potholes.tflite",
-        labels: Platform.isIOS ? "" : "assets/potholes.txt",
-        isAsset: true,
-        isModelTf1: true,
-      );
-      setState(() {
-        _debugStatus = 'loadModel result: $result';
-      });
-    } catch (e, st) {
-      setState(() {
-        _debugStatus = 'loadModel ERROR: $e';
-      });
-      print('loadModel ERROR: $e\n$st');
-    }
+    // iOS uses a version of this model with its TFLite_Detection_PostProcess
+    // custom op stripped out (see assets/chitholian_potholes_raw.tflite and
+    // ssd_postprocess.dart for why) and decodes detections itself, so it
+    // doesn't need the label file - Android still uses the plugin's
+    // built-in SSD parsing against the original model.
+    await Tflite.loadModel(
+      model: Platform.isIOS
+          ? "assets/chitholian_potholes_raw.tflite"
+          : "assets/chitholian_potholes.tflite",
+      labels: Platform.isIOS ? "" : "assets/potholes.txt",
+      isAsset: true,
+      isModelTf1: true,
+    );
   }
 
   setRecognitions(recognitions) {
@@ -67,51 +56,42 @@ class _StaticImageState extends State<StaticImage> {
 
   // this function detects the objects on the image
   detectObject(File image) async {
-    try {
-      List recognitions;
-      if (Platform.isIOS) {
-        final raw = await Tflite.detectObjectRawOnImage(
-          path: image.path,
-          imageMean: 127.5,
-          imageStd: 127.5,
-        );
-        final detections = decodeSsdDetections(
-          boxEncodings: toDoubleList(raw?['boxes']),
-          classScores: toDoubleList(raw?['scores']),
-          anchors: toDoubleList(raw?['anchors']),
-        );
-        recognitions = ssdDetectionsToRecognitions(detections);
-      } else {
-        recognitions = await Tflite.detectObjectOnImage(
-              path: image.path, // required
-              model: "SSDMobileNet",
-              imageMean: 127.5,
-              imageStd: 127.5,
-              threshold: 0.4,
-              numResultsPerClass: 10, // defaults to 5
-              asynch: true // defaults to true
-              ) ??
-            [];
-      }
-      FileImage(image)
-          .resolve(ImageConfiguration())
-          .addListener((ImageStreamListener((ImageInfo info, bool _) {
-            setState(() {
-              _imageWidth = info.image.width.toDouble();
-              _imageHeight = info.image.height.toDouble();
-            });
-          })));
-
-      setState(() {
-        _debugStatus = 'detection returned ${recognitions.length} result(s): $recognitions';
-      });
-      setRecognitions(recognitions);
-    } catch (e, st) {
-      setState(() {
-        _debugStatus = 'detectObject ERROR: $e';
-      });
-      print('detectObject ERROR: $e\n$st');
+    List recognitions;
+    if (Platform.isIOS) {
+      final raw = await Tflite.detectObjectRawOnImage(
+        path: image.path,
+        imageMean: 127.5,
+        imageStd: 127.5,
+      );
+      final detections = decodeSsdDetections(
+        boxEncodings: toDoubleList(raw?['boxes']),
+        classScores: toDoubleList(raw?['scores']),
+        anchors: toDoubleList(raw?['anchors']),
+        nmsScoreThreshold: 0.4,
+      );
+      recognitions = ssdDetectionsToRecognitions(detections);
+    } else {
+      recognitions = await Tflite.detectObjectOnImage(
+            path: image.path, // required
+            model: "SSDMobileNet",
+            imageMean: 127.5,
+            imageStd: 127.5,
+            threshold: 0.4,
+            numResultsPerClass: 10, // defaults to 5
+            asynch: true // defaults to true
+            ) ??
+          [];
     }
+    FileImage(image)
+        .resolve(ImageConfiguration())
+        .addListener((ImageStreamListener((ImageInfo info, bool _) {
+          setState(() {
+            _imageWidth = info.image.width.toDouble();
+            _imageHeight = info.image.height.toDouble();
+          });
+        })));
+
+    setRecognitions(recognitions);
   }
 
   @override
@@ -229,21 +209,6 @@ class _StaticImageState extends State<StaticImage> {
     }
 
     stackChildren.addAll(renderBoxes(size));
-
-    // TEMPORARY diagnostic overlay - remove once detection is confirmed
-    // working on iOS.
-    stackChildren.add(Align(
-      alignment: Alignment.bottomCenter,
-      child: Container(
-        width: size.width,
-        color: Colors.black87,
-        padding: const EdgeInsets.all(8),
-        child: Text(
-          _debugStatus,
-          style: const TextStyle(fontSize: 12, color: Colors.yellow),
-        ),
-      ),
-    ));
 
     if (_busy!) {
       print("App is currently $_busy");

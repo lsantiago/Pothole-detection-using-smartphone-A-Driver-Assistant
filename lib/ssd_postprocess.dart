@@ -43,7 +43,11 @@ List<SsdDetection> decodeSsdDetections({
   double hScale = 5.0,
   double wScale = 5.0,
   double nmsIouThreshold = 0.6,
-  double nmsScoreThreshold = 1e-8,
+  // Both models' own custom_options set this close to 0 - they expect the
+  // caller to pick a display/decision threshold rather than filtering
+  // in the op itself, matching the `threshold` argument the native
+  // SSDMobileNet path took on Android. 0.4 mirrors that path's default.
+  double nmsScoreThreshold = 0.4,
   int maxDetections = 10,
 }) {
   final numBoxes = anchors.length ~/ 4;
