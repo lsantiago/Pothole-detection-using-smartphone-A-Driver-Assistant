@@ -13,7 +13,16 @@ A Flutter plugin for accessing TensorFlow Lite. Supports both iOS and Android.
   s.author           = { 'Qian Sha' => 'https://github.com/shaqian' }
   s.source           = { :path => '.' }
   s.source_files = 'Classes/**/*'
-  s.public_header_files = 'Classes/**/*.h'
+  # Only TflitePlugin.h (the FlutterPlugin entry point) needs to be public.
+  # ios_image_load.h is an internal helper that #includes <vector> - modern
+  # Xcode's explicit Clang modules require public headers to be
+  # self-contained/module-safe, and a bare C++ standard header in a header
+  # exposed to the (Objective-C) GeneratedPluginRegistrant.m import breaks
+  # that with "'vector' file not found" / "Could not build module
+  # 'flutter_tflite'". Keeping it private avoids it being pulled into the
+  # module interface at all; it's still compiled and still visible to the
+  # plugin's own .mm files via relative #include.
+  s.public_header_files = 'Classes/TflitePlugin.h'
   s.dependency 'Flutter'
   # Unconstrained resolves to the latest TensorFlowLiteC (2.13.0 as of this
   # writing), which repackaged its headers and breaks this plugin's plain
