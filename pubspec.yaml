@@ -53,6 +53,15 @@ dependencies:
 
   
 
+# flutter_tflite 1.0.1 on pub.dev ships ios/tflite.podspec (its old package
+# name) instead of ios/flutter_tflite.podspec, so CocoaPods can't find a
+# podspec matching the plugin name and iOS builds fail with:
+# "No podspec found for `flutter_tflite`". This points at a local copy with
+# the podspec renamed/fixed to match. See third_party/flutter_tflite/.
+dependency_overrides:
+  flutter_tflite:
+    path: third_party/flutter_tflite
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
