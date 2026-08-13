@@ -174,7 +174,7 @@ class _LiveFeedState extends State<LiveFeed> with WidgetsBindingObserver {
         imageMean: 127.5,
         imageStd: 127.5,
         numResultsPerClass: 3,
-        threshold: 0.5,
+        threshold: 0.01, // TEMP lowered from 0.5 to see raw scores
         //For yolo
         // model: "YOLO",
         // imageHeight: img.height,
